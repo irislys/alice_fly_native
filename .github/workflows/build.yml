@@ -1,0 +1,57 @@
+name: 编译
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: 检出
+        uses: actions/checkout@v4
+
+      - name: 安装 Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: 缓存
+        uses: Swatinem/rust-cache@v2
+
+      - name: 编译 release（静态 CRT，单文件 exe）
+        env:
+          RUSTFLAGS: "-C target-feature=+crt-static"
+        run: cargo build --release --target x86_64-pc-windows-msvc
+
+      - name: 整理产物
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Copy-Item target/x86_64-pc-windows-msvc/release/alice_fly_native.exe dist/alice_fly_native.exe
+          Get-Item dist/alice_fly_native.exe | Format-List Name, Length, LastWriteTime
+
+      - name: 上传 Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: alice_fly_native-windows-x64
+          path: dist/alice_fly_native.exe
+          if-no-files-found: error
+
+      - name: 发布 Release（仅 main 推送）
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: 构建 #${{ github.run_number }} 喵~
+          body: |
+            Windows x64 单文件 exe（crt-static，无需额外 DLL）
+            提交: ${{ github.sha }}
+          files: dist/alice_fly_native.exe
+          draft: false
+          prerelease: false
